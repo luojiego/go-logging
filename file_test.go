@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -229,58 +230,113 @@ func TestFileBackend_doRotate(t *testing.T) {
 		logTime time.Time
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		err    string
+		name    string
+		fields  fields
+		newName string
+		args    args
+		err     string
 	}{
 		{
-			name: "max size > 0",
+			name: "max size > 0 and max lines > 0",
 			fields: fields{
 				status:           0,
 				Filename:         "test.log",
 				fileWriter:       file,
-				MaxLines:         0,
+				MaxLines:         100000,
 				maxLinesCurLines: 0,
-				MaxSize:          10,
+				MaxSize:          1 << 28,
 				maxSizeCurSize:   0,
 				Daily:            false,
 				MaxDays:          0,
 				dailyOpenDate:    0,
-				Rotate:           false,
+				Rotate:           true,
 				Perm:             0660,
 				fileNameOnly:     "test",
 				suffix:           ".log",
 				asyncMsgChan:     make(chan []byte),
 				asyncSignalChan:  make(chan struct{}),
 			},
+			newName: "test." + time.Now().Format("2006-01-02") + ".001.log",
 			args: args{
 				logTime: time.Now(),
 			},
 			err: "",
 		},
 		{
-			name: "test rotate",
+			name: "max size > 0 and max lines == 0",
 			fields: fields{
 				status:           0,
 				Filename:         "test.log",
 				fileWriter:       file,
 				MaxLines:         0,
 				maxLinesCurLines: 0,
-				MaxSize:          0,
+				MaxSize:          1 << 28,
 				maxSizeCurSize:   0,
 				Daily:            false,
 				MaxDays:          0,
 				dailyOpenDate:    0,
-				Rotate:           false,
+				Rotate:           true,
 				Perm:             0660,
 				fileNameOnly:     "test",
 				suffix:           ".log",
 				asyncMsgChan:     make(chan []byte),
 				asyncSignalChan:  make(chan struct{}),
 			},
+			newName: "test." + time.Now().Format("2006-01-02") + ".002.log",
 			args: args{
 				logTime: time.Now(),
+			},
+			err: "",
+		},
+		{
+			name: "max size == 0 and max lines > 0",
+			fields: fields{
+				status:           0,
+				Filename:         "test.log",
+				fileWriter:       file,
+				MaxLines:         10000,
+				maxLinesCurLines: 0,
+				MaxSize:          0,
+				maxSizeCurSize:   0,
+				Daily:            false,
+				MaxDays:          0,
+				dailyOpenDate:    0,
+				Rotate:           true,
+				Perm:             0660,
+				fileNameOnly:     "test",
+				suffix:           ".log",
+				asyncMsgChan:     make(chan []byte),
+				asyncSignalChan:  make(chan struct{}),
+			},
+			newName: "test." + time.Now().Format("2006-01-02") + ".003.log",
+			args: args{
+				logTime: time.Now(),
+			},
+			err: "",
+		},
+		{
+			name: "max size == 0 and max lines == 0 and daily == true",
+			fields: fields{
+				status:           0,
+				Filename:         "test.log",
+				fileWriter:       file,
+				MaxLines:         10000,
+				maxLinesCurLines: 0,
+				MaxSize:          0,
+				maxSizeCurSize:   0,
+				Daily:            true,
+				MaxDays:          0,
+				dailyOpenDate:    0,
+				Rotate:           true,
+				Perm:             0660,
+				fileNameOnly:     "test",
+				suffix:           ".log",
+				asyncMsgChan:     make(chan []byte),
+				asyncSignalChan:  make(chan struct{}),
+			},
+			newName: "test." + time.Now().Format("2006-01-02") + ".003.log",
+			args: args{
+				logTime: time.Now().Add(24 * time.Hour),
 			},
 			err: "",
 		},
@@ -312,8 +368,31 @@ func TestFileBackend_doRotate(t *testing.T) {
 					assert.Contains(err.Error(), tt.err, "test: ["+tt.name+"] error message not eq")
 				}
 			} else {
+				_, err := os.Stat(tt.newName)
+				if os.IsNotExist(err) {
+					assert.Failf("targe file not exist", "test: [%s] file: %s not exist", tt.name, tt.newName)
+				}
 				assert.Equal("", tt.err, "test: ["+tt.name+"] return nil but want not nil")
 			}
 		})
+	}
+
+	removeTestFiles("test")
+}
+
+func removeTestFiles(prefix string) {
+	matchingFiles, err := filepath.Glob(prefix + ".*")
+	if err != nil {
+		fmt.Println("Error finding files:", err)
+		return
+	}
+
+	for _, file := range matchingFiles {
+		err := os.Remove(file)
+		if err != nil {
+			fmt.Printf("Error removing file %s: %s\n", file, err)
+		} else {
+			fmt.Printf("Successfully removed file %s\n", file)
+		}
 	}
 }

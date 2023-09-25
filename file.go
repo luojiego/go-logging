@@ -239,6 +239,8 @@ func (w *FileBackend) lines() (int, error) {
 	return count, nil
 }
 
+const maxFileIndex = 999
+
 // DoRotate means it need to write file in new file.
 // new file name like xx.2013-01-01.log (daily) or xx.001.log (by line or size)
 func (w *FileBackend) doRotate(logTime time.Time) error {
@@ -250,16 +252,20 @@ func (w *FileBackend) doRotate(logTime time.Time) error {
 	// Find the next available number
 	num := 1
 	fName := ""
-	if w.MaxLines > 0 || w.MaxSize > 0 {
-		for ; err == nil && num <= 999; num++ {
-			fName = w.fileNameOnly + fmt.Sprintf(".%s.%03d%s", logTime.Format("2006-01-02"), num, w.suffix)
-			_, err = os.Lstat(fName)
+	modTime := logTime
+	if w.Daily && logTime.Day() != w.dailyOpenDate {
+		info, err := os.Lstat(w.Filename)
+		if err != nil {
+			return fmt.Errorf("Rotate: Cannot find free log number to rename %s\n", w.Filename)
 		}
-	} else {
-		yesterDay := logTime.AddDate(0, 0, -1)
-		fName = fmt.Sprintf("%s.%s%s", w.fileNameOnly, yesterDay.Format("2006-01-02"), w.suffix)
+		modTime = info.ModTime()
+	}
+
+	for ; err == nil && num <= maxFileIndex; num++ {
+		fName = w.fileNameOnly + fmt.Sprintf(".%s.%03d%s", modTime.Format("2006-01-02"), num, w.suffix)
 		_, err = os.Lstat(fName)
 	}
+
 	// return error if the last file checked still existed
 	if err == nil {
 		return fmt.Errorf("Rotate: Cannot find free log number to rename %s\n", w.Filename)
